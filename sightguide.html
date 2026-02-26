@@ -1510,7 +1510,7 @@
 
       pois.forEach(p => {
         const isCurrent = STATE.currentAudioPOI && String(p.id) === String(STATE.currentAudioPOI.id);
-        const size = isCurrent ? 16 : 10;
+        const size = isCurrent ? 34 : 10;
         const bg = isCurrent ? '#d69e2e' : (p.heard ? '#cbd5e0' : '#ffffff');
         const border = isCurrent ? '#ffffff' : (p.heard ? '#a0aec0' : '#d69e2e');
         const shadow = isCurrent ? 'rgba(214,158,46,0.8)' : (p.heard ? 'transparent' : 'rgba(214,158,46,0.3)');
@@ -1596,13 +1596,8 @@
         STATE.currentAudioPOI = null;
         renderMapMarkers(STATE.pois);
         updateAudioIcon();
-        // No more items — hide audio bar after a short delay
-        setTimeout(() => {
-          if (!STATE.isNarrating && !STATE.isPlaying) {
-            document.getElementById('audioBar').classList.remove('visible');
-            document.getElementById('audioProgress').style.width = '0%';
-          }
-        }, 1500);
+        // Just reset progress, keep bar visible
+        document.getElementById('audioProgress').style.width = '0%';
         return;
       }
       const next = STATE.narrationQueue.shift();
