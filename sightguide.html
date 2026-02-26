@@ -1721,6 +1721,9 @@
 
         elWs.onclose = (event) => {
           console.log(`ElevenLabs WS Closed (Code: ${event.code}, Reason: ${event.reason})`);
+          if (event.code === 1008) {
+            alert(`ElevenLabs WS 1008 Error: ${event.reason}`);
+          }
         };
       }
 
@@ -1802,8 +1805,9 @@
         }
 
         if (!useElevenLabs) flushBrowser();
-        if (totalUtterances === 0 && !useElevenLabs) demoNarration(poi);
-        else if (useElevenLabs) demoNarration(poi);
+        // TEMPORARILY DISABLED BROWSER FALLBACK
+        // if (totalUtterances === 0 && !useElevenLabs) demoNarration(poi);
+        // else if (useElevenLabs) demoNarration(poi);
       }
     }
 
