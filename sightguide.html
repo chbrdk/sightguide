@@ -1052,6 +1052,10 @@
         <input class="config-input" id="cfgOpenAI" type="password" placeholder="sk-proj-..." />
       </div>
       <div class="config-field">
+        <div class="config-label">ElevenLabs API Key</div>
+        <input class="config-input" id="cfgElevenLabs" type="password" placeholder="sk_..." />
+      </div>
+      <div class="config-field">
         <div class="config-label">n8n Webhook URL (Fallback)</div>
         <input class="config-input" id="cfgWebhook" placeholder="https://your-n8n.app/webhook/sightguide" />
       </div>
@@ -1104,6 +1108,7 @@
       config: JSON.parse(localStorage.getItem('sg_config') || JSON.stringify({
         webhookUrl: 'https://workflows.plygrnd.tech/webhook/sightguide',
         openaiKey: '',
+        elevenlabsKey: '',
         radius: 500,
         fov: 120
       }))
@@ -1577,9 +1582,10 @@
       requestNarration(String(next.id), true);
     }
 
-    // ─── DIRECT: Wikipedia + GPT-5-nano (streaming) → Browser TTS (sentence streaming) ───
+    // ─── DIRECT: Wikipedia + GPT-5-nano (streaming) → ElevenLabs Turbo / Browser TTS ───
     async function requestNarrationDirect(poi) {
       const key = STATE.config.openaiKey;
+      const elKey = STATE.config.elevenlabsKey;
       const ttsLabel = document.getElementById('audioTTSLabel');
 
       // 1. Fetch Wikipedia summary
@@ -1598,49 +1604,121 @@
       const systemPrompt = `Du bist ein charmanter Audio-Reisefuhrer namens "SightGuide". Sprich den Zuhorer direkt an, mische Fakten mit Anekdoten, sei warmherzig. ${modeInstr[STATE.mode] || modeInstr.stand} Antworte NUR mit dem gesprochenen Text, kein Markdown. Sprache: Deutsch.`;
       const userContent = `POI: ${poi.name}\nTyp: ${poi.type}\nModus: ${STATE.mode}\n${wikiText ? 'Wikipedia:\n' + wikiText : ''}`;
 
-      // 3. Stream GPT-5-nano → sentence-by-sentence Browser TTS
+      // 3. Stream GPT-5-nano → collect full narration
       ttsLabel.textContent = 'GPT-5-nano · Streaming…';
+      let narration = '';
       let sentenceBuffer = '';
       let sentenceIndex = 0;
       let totalUtterances = 0;
       let finishedUtterances = 0;
       let streamDone = false;
+      const useElevenLabs = !!elKey;
 
-      // Helper: speak a sentence immediately
-      function speakSentence(text) {
+      // ── Browser TTS helpers (fallback) ──
+      function speakSentenceBrowser(text) {
         if (!text.trim()) return;
         totalUtterances++;
         const u = new SpeechSynthesisUtterance(text.trim());
         u.lang = 'de-DE';
         u.rate = 1.1;
-        u.onstart = () => {
-          STATE.isPlaying = true;
-          ttsLabel.textContent = `Browser TTS · Satz ${sentenceIndex}`;
-        };
+        u.onstart = () => { STATE.isPlaying = true; };
         u.onend = () => {
           finishedUtterances++;
-          // Check if all sentences are done AND the stream has finished
-          if (streamDone && finishedUtterances >= totalUtterances) {
-            processQueue();
-          }
+          if (streamDone && finishedUtterances >= totalUtterances) processQueue();
         };
-        u.onerror = (e) => {
-          console.warn('TTS utterance error:', e);
+        u.onerror = () => {
           finishedUtterances++;
-          if (streamDone && finishedUtterances >= totalUtterances) {
-            processQueue();
-          }
+          if (streamDone && finishedUtterances >= totalUtterances) processQueue();
         };
         speechSynthesis.speak(u);
         sentenceIndex++;
       }
 
-      // Helper: flush any remaining text in the buffer
-      function flushBuffer() {
+      function flushBrowser() {
         if (sentenceBuffer.trim()) {
-          speakSentence(sentenceBuffer);
+          speakSentenceBrowser(sentenceBuffer);
           sentenceBuffer = '';
         }
+      }
+
+      // ── AudioContext for ElevenLabs WebSocket streaming ──
+      let audioCtx, nextAudioTime = 0;
+      function getAudioContext() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        return audioCtx;
+      }
+
+      function playAudioChunk(base64Audio) {
+        const ctx = getAudioContext();
+        const binaryRaw = window.atob(base64Audio);
+        const len = binaryRaw.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryRaw.charCodeAt(i);
+        }
+
+        ctx.decodeAudioData(bytes.buffer, (audioBuffer) => {
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(ctx.destination);
+
+          if (nextAudioTime < ctx.currentTime) {
+            nextAudioTime = ctx.currentTime;
+          }
+          source.start(nextAudioTime);
+          nextAudioTime += audioBuffer.duration;
+
+          source.onended = () => {
+            // Basic detection of queue end could go here, for now rely on stream finish
+          };
+        });
+      }
+
+      // If using ElevenLabs, open the WebSocket BEFORE reading the GPT stream
+      let elWs = null;
+      let elWsOpen = false;
+      const voiceId = 'JBFqnCBsd6RMkjVDRZzb'; // George
+
+      if (useElevenLabs) {
+        ttsLabel.textContent = 'ElevenLabs WS Verbinden…';
+        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32`;
+        elWs = new WebSocket(wsUrl);
+
+        elWs.onopen = () => {
+          elWsOpen = true;
+          // Send initial config packet
+          elWs.send(JSON.stringify({
+            text: " ",
+            voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true },
+            xi_api_key: elKey
+          }));
+          ttsLabel.textContent = 'ElevenLabs WS Verbunden';
+        };
+
+        elWs.onmessage = (event) => {
+          const res = JSON.parse(event.data);
+          if (res.audio) {
+            STATE.isPlaying = true;
+            document.getElementById('audioTTSLabel').textContent = 'ElevenLabs WS · Live';
+            playAudioChunk(res.audio);
+          }
+          if (res.isFinal) {
+            // The TTS finished processing all sent text
+            setTimeout(() => {
+              if (streamDone) processQueue();
+            }, 500);
+          }
+        };
+
+        elWs.onerror = (err) => {
+          console.error("ElevenLabs WS Error:", err);
+          ttsLabel.textContent = 'WS Fehler (Fallback Browser TTS)';
+        };
+
+        elWs.onclose = () => {
+          console.log("ElevenLabs WS Closed");
+        };
       }
 
       try {
@@ -1655,6 +1733,7 @@
         const reader = chatResp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1665,44 +1744,58 @@
             try {
               const chunk = JSON.parse(line.slice(6));
               const content = chunk.choices?.[0]?.delta?.content || '';
-              sentenceBuffer += content;
+              narration += content;
 
-              // Detect sentence boundaries: . ! ? followed by a space or end
-              const sentenceEnd = sentenceBuffer.search(/[.!?]\s/);
-              if (sentenceEnd !== -1) {
-                const sentence = sentenceBuffer.slice(0, sentenceEnd + 1);
-                sentenceBuffer = sentenceBuffer.slice(sentenceEnd + 2);
-                speakSentence(sentence);
+              if (!useElevenLabs) {
+                // Browser TTS: stream sentence-by-sentence
+                sentenceBuffer += content;
+                const sentenceEnd = sentenceBuffer.search(/[.!?]\s/);
+                if (sentenceEnd !== -1) {
+                  const sentence = sentenceBuffer.slice(0, sentenceEnd + 1);
+                  sentenceBuffer = sentenceBuffer.slice(sentenceEnd + 2);
+                  speakSentenceBrowser(sentence);
+                }
+                const preview = (sentenceBuffer || '').slice(-50);
+                ttsLabel.textContent = preview ? '…' + preview : `Browser TTS · Satz ${sentenceIndex}`;
+              } else {
+                // ElevenLabs WS: Stream words as they come in
+                sentenceBuffer += content;
+                // Wait until we have at least a space to ensure a word boundary, or punctuation
+                if (sentenceBuffer.match(/[\s.!?]/)) {
+                  if (elWsOpen && elWs.readyState === WebSocket.OPEN) {
+                    elWs.send(JSON.stringify({ text: sentenceBuffer }));
+                  }
+                  sentenceBuffer = '';
+                }
+                ttsLabel.textContent = narration.length > 55 ? '…' + narration.slice(-55) : narration;
               }
-
-              // Update label with live text
-              const preview = (sentenceBuffer || '').slice(-50);
-              ttsLabel.textContent = preview ? '…' + preview : `Browser TTS · Satz ${sentenceIndex}`;
             } catch { }
           }
         }
 
-        // Stream finished — flush remaining buffer
-        flushBuffer();
+        // Stream done
         streamDone = true;
-        ttsLabel.textContent = `Browser TTS · ${totalUtterances} Sätze`;
 
-        // If no utterances were queued at all, process queue immediately
-        if (totalUtterances === 0) {
-          processQueue();
-        }
-        // If all utterances already finished before streamDone was set
-        if (finishedUtterances >= totalUtterances) {
-          processQueue();
+        if (useElevenLabs) {
+          // Flush remaining text and send EOS
+          if (elWsOpen && elWs.readyState === WebSocket.OPEN) {
+            if (sentenceBuffer) elWs.send(JSON.stringify({ text: sentenceBuffer }));
+            elWs.send(JSON.stringify({ text: "" })); // Empty text signals end of input streaming
+          }
+        } else {
+          // Browser TTS: flush remaining buffer
+          flushBrowser();
+          ttsLabel.textContent = `Browser TTS · ${totalUtterances} Sätze`;
+          if (totalUtterances === 0) processQueue();
+          if (finishedUtterances >= totalUtterances) processQueue();
         }
 
       } catch (err) {
         console.error('Chat stream failed:', err);
         streamDone = true;
-        flushBuffer();
-        if (totalUtterances === 0) {
-          demoNarration(poi);
-        }
+        if (!useElevenLabs) flushBrowser();
+        if (totalUtterances === 0 && !useElevenLabs) demoNarration(poi);
+        else if (useElevenLabs) demoNarration(poi);
       }
     }
 
@@ -1868,6 +1961,7 @@
     // ─── CONFIG ───
     function openConfig() {
       document.getElementById('cfgOpenAI').value = STATE.config.openaiKey || '';
+      document.getElementById('cfgElevenLabs').value = STATE.config.elevenlabsKey || '';
       document.getElementById('cfgWebhook').value = STATE.config.webhookUrl;
       document.getElementById('cfgRadius').value = STATE.config.radius;
       document.getElementById('cfgFOV').value = STATE.config.fov;
@@ -1876,6 +1970,7 @@
 
     function saveConfig() {
       STATE.config.openaiKey = document.getElementById('cfgOpenAI').value.trim();
+      STATE.config.elevenlabsKey = document.getElementById('cfgElevenLabs').value.trim();
       STATE.config.webhookUrl = document.getElementById('cfgWebhook').value.trim();
       STATE.config.radius = parseInt(document.getElementById('cfgRadius').value) || 500;
       STATE.config.fov = parseInt(document.getElementById('cfgFOV').value) || 120;
