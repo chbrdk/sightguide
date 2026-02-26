@@ -1084,6 +1084,8 @@
       compassHeading: null, // device compass
       speed: 0,             // m/s
       speedKmh: 0,
+      accuracy: 0,
+      dirty: false,
       mode: 'stand',        // stand | walk | drive
       pois: [],
       heardPOIs: new Set(JSON.parse(localStorage.getItem('sg_heard') || '[]')),
@@ -1186,28 +1188,20 @@
     function onPosition(pos) {
       const { latitude, longitude, heading, speed, accuracy } = pos.coords;
 
+      // Update map panning (low frequency, okay to do directly here)
+      if (STATE.lat !== latitude || STATE.lng !== longitude) {
+        const latlng = [latitude, longitude];
+        if (STATE.userMarker) STATE.userMarker.setLatLng(latlng);
+        if (STATE.map) STATE.map.panTo(latlng, { animate: true, duration: 0.5 });
+      }
+
       STATE.lat = latitude;
       STATE.lng = longitude;
       if (heading !== null && !isNaN(heading)) STATE.heading = heading;
       STATE.speed = speed || 0;
       STATE.speedKmh = Math.round((STATE.speed * 3.6) * 10) / 10;
-
-      // Update map
-      const latlng = [latitude, longitude];
-      STATE.userMarker.setLatLng(latlng);
-      STATE.map.panTo(latlng, { animate: true, duration: 0.5 });
-
-      // Update telemetry
-      const effectiveHeading = STATE.compassHeading ?? STATE.heading ?? 0;
-      document.getElementById('telHeading').innerHTML = `${Math.round(effectiveHeading)}<span class="tele-unit">°</span>`;
-      document.getElementById('telSpeed').innerHTML = `${STATE.speedKmh}<span class="tele-unit">km/h</span>`;
-      document.getElementById('statusText').textContent = `±${Math.round(accuracy)}m`;
-
-      // Determine mode
-      updateSpeedMode();
-
-      // Draw FOV wedge
-      drawFOV(latitude, longitude, effectiveHeading);
+      STATE.accuracy = Math.round(accuracy);
+      STATE.dirty = true;
 
       // Fetch POIs (throttled)
       const now = Date.now();
@@ -1215,23 +1209,45 @@
         STATE.lastPOIFetch = now;
         fetchPOIs(latitude, longitude);
       }
-
-      // Update POI directions
-      updatePOIDirections(effectiveHeading);
     }
 
     function onCompass(e) {
       // iOS gives webkitCompassHeading, Android gives alpha
       if (e.webkitCompassHeading !== undefined) {
         STATE.compassHeading = e.webkitCompassHeading;
+        STATE.dirty = true;
       } else if (e.alpha !== null) {
         STATE.compassHeading = 360 - e.alpha;
+        STATE.dirty = true;
       }
     }
 
     function onGeoError(err) {
       console.error('Geo error:', err);
       document.getElementById('statusText').textContent = 'GPS Fehler';
+    }
+
+    // ─── RENDER LOOP ───
+    function renderLoop() {
+      requestAnimationFrame(renderLoop);
+      if (!STATE.dirty || STATE.lat === null) return;
+      STATE.dirty = false;
+
+      const effectiveHeading = STATE.compassHeading ?? STATE.heading ?? 0;
+
+      // Update telemetry
+      document.getElementById('telHeading').innerHTML = `${Math.round(effectiveHeading)}<span class="tele-unit">°</span>`;
+      document.getElementById('telSpeed').innerHTML = `${STATE.speedKmh}<span class="tele-unit">km/h</span>`;
+      document.getElementById('statusText').textContent = `±${STATE.accuracy}m`;
+
+      // Determine mode status
+      updateSpeedMode();
+
+      // Draw FOV wedge
+      drawFOV(STATE.lat, STATE.lng, effectiveHeading);
+
+      // Update POI directions
+      updatePOIDirections(effectiveHeading);
     }
 
     // ─── SPEED MODE LOGIC ───
@@ -1261,8 +1277,6 @@
 
     // ─── FOV VISUALIZATION ───
     function drawFOV(lat, lng, heading) {
-      if (STATE.fovWedge) STATE.map.removeLayer(STATE.fovWedge);
-
       const fov = STATE.config.fov;
       const radius = STATE.config.radius;
       const startAngle = heading - fov / 2;
@@ -1274,12 +1288,16 @@
       }
       points.push([lat, lng]);
 
-      STATE.fovWedge = L.polygon(points, {
-        color: 'rgba(214, 158, 46, 0.3)',
-        fillColor: 'rgba(214, 158, 46, 0.08)',
-        weight: 1,
-        fillOpacity: 1
-      }).addTo(STATE.map);
+      if (STATE.fovWedge) {
+        STATE.fovWedge.setLatLngs(points);
+      } else {
+        STATE.fovWedge = L.polygon(points, {
+          color: 'rgba(214, 158, 46, 0.3)',
+          fillColor: 'rgba(214, 158, 46, 0.08)',
+          weight: 1,
+          fillOpacity: 1
+        }).addTo(STATE.map);
+      }
     }
 
     function destPoint(lat, lng, bearing, distance) {
@@ -1845,17 +1863,15 @@
       STATE.lat = testLat; STATE.lng = testLng;
       STATE.heading = testHeading; STATE.compassHeading = testHeading;
       STATE.speed = 0; STATE.speedKmh = 0;
+      STATE.accuracy = 5;
+      STATE.dirty = true;
 
       // Update UI
+      STATE.userMarker.setLatLng([testLat, testLng]);
+      STATE.map.setView([testLat, testLng], 16, { animate: true });
       document.getElementById('statusPill').classList.add('active');
       document.getElementById('statusText').textContent = 'Test-Modus';
       document.getElementById('emptyState')?.remove();
-      STATE.userMarker.setLatLng([testLat, testLng]);
-      STATE.map.setView([testLat, testLng], 16, { animate: true });
-      document.getElementById('telHeading').innerHTML = `${testHeading}<span class="tele-unit">°</span>`;
-      document.getElementById('telSpeed').innerHTML = `0<span class="tele-unit">km/h</span>`;
-      updateSpeedMode();
-      drawFOV(testLat, testLng, testHeading);
 
       // Fetch real POIs, then trigger narration for Brandenburg Gate via the same routing system
       fetchPOIs(testLat, testLng).then(() => {
@@ -1886,6 +1902,7 @@
 
     // ─── INIT ───
     initMap();
+    renderLoop();
     // Wire audio end → queue processor
     document.getElementById('audioEl').addEventListener('ended', processQueue);
   </script>
