@@ -1497,16 +1497,23 @@
       STATE.poiMarkers = [];
 
       pois.forEach(p => {
+        const isCurrent = STATE.currentAudioPOI && String(p.id) === String(STATE.currentAudioPOI.id);
+        const size = isCurrent ? 16 : 10;
+        const bg = isCurrent ? '#d69e2e' : (p.heard ? '#cbd5e0' : '#ffffff');
+        const border = isCurrent ? '#ffffff' : (p.heard ? '#a0aec0' : '#d69e2e');
+        const shadow = isCurrent ? 'rgba(214,158,46,0.8)' : (p.heard ? 'transparent' : 'rgba(214,158,46,0.3)');
+
         const icon = L.divIcon({
           className: '',
           html: `<div style="
-        width: 10px; height: 10px;
-        background: ${p.heard ? '#cbd5e0' : '#ffffff'};
-        border: 2px solid ${p.heard ? '#a0aec0' : '#d69e2e'};
+        width: ${size}px; height: ${size}px;
+        background: ${bg};
+        border: 2px solid ${border};
         border-radius: 50%;
-        box-shadow: 0 0 8px ${p.heard ? 'transparent' : 'rgba(214,158,46,0.3)'};
+        box-shadow: 0 0 ${isCurrent ? '12px' : '8px'} ${shadow};
+        transition: all 0.3s ease;
       "></div>`,
-          iconSize: [10, 10], iconAnchor: [5, 5]
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2]
         });
 
         const marker = L.marker([p.lat, p.lng], { icon })
@@ -1539,6 +1546,8 @@
       }
 
       STATE.isNarrating = true;
+      STATE.currentAudioPOI = poi;
+      renderMapMarkers(STATE.pois);
 
       const btn = document.querySelector(`.poi-card:has(#arrow-${poiId}) .poi-play-btn`);
       if (btn) btn.classList.add('loading');
@@ -1572,6 +1581,8 @@
       STATE.isNarrating = false;
       STATE.isPlaying = false;
       if (STATE.narrationQueue.length === 0) {
+        STATE.currentAudioPOI = null;
+        renderMapMarkers(STATE.pois);
         // No more items — hide audio bar after a short delay
         setTimeout(() => {
           if (!STATE.isNarrating && !STATE.isPlaying) {
@@ -1902,6 +1913,8 @@
       STATE.isPlaying = false;
       STATE.isNarrating = false;
       STATE.narrationQueue = []; // clear entire queue on manual close
+      STATE.currentAudioPOI = null;
+      renderMapMarkers(STATE.pois);
       document.getElementById('audioBar').classList.remove('visible');
       document.getElementById('audioProgress').style.width = '0%';
     }
