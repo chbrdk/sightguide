@@ -1685,7 +1685,7 @@
 
       if (useElevenLabs) {
         ttsLabel.textContent = 'ElevenLabs WS Verbinden…';
-        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32`;
+        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi_api_key=${elKey}`;
         elWs = new WebSocket(wsUrl);
 
         elWs.onopen = () => {
@@ -1694,8 +1694,7 @@
           // Send initial config packet
           elWs.send(JSON.stringify({
             text: " ",
-            voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true },
-            xi_api_key: elKey
+            voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true }
           }));
           ttsLabel.textContent = 'ElevenLabs WS Verbunden';
         };
@@ -1720,8 +1719,8 @@
           ttsLabel.textContent = 'WS Fehler (Fallback Browser TTS)';
         };
 
-        elWs.onclose = () => {
-          console.log("ElevenLabs WS Closed");
+        elWs.onclose = (event) => {
+          console.log(`ElevenLabs WS Closed (Code: ${event.code}, Reason: ${event.reason})`);
         };
       }
 
@@ -1730,7 +1729,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
           body: JSON.stringify({ model: 'gpt-5-nano', stream: true, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }] }),
-          signal: AbortSignal.timeout(20000)
+          signal: AbortSignal.timeout(60000)
         });
         if (!chatResp.ok) throw new Error(`Chat API ${chatResp.status}`);
 
