@@ -1577,7 +1577,7 @@
       requestNarration(String(next.id), true);
     }
 
-    // ─── DIRECT: Wikipedia + GPT-4o-mini (streaming) + OpenAI TTS ───
+    // ─── DIRECT: Wikipedia + GPT-4o-mini (streaming) → Browser TTS (sentence streaming) ───
     async function requestNarrationDirect(poi) {
       const key = STATE.config.openaiKey;
       const ttsLabel = document.getElementById('audioTTSLabel');
@@ -1598,9 +1598,51 @@
       const systemPrompt = `Du bist ein charmanter Audio-Reisefuhrer namens "SightGuide". Sprich den Zuhorer direkt an, mische Fakten mit Anekdoten, sei warmherzig. ${modeInstr[STATE.mode] || modeInstr.stand} Antworte NUR mit dem gesprochenen Text, kein Markdown. Sprache: Deutsch.`;
       const userContent = `POI: ${poi.name}\nTyp: ${poi.type}\nModus: ${STATE.mode}\n${wikiText ? 'Wikipedia:\n' + wikiText : ''}`;
 
-      // 3. Stream GPT-4o-mini narration
-      ttsLabel.textContent = 'GPT-4o-mini…';
-      let narration = '';
+      // 3. Stream GPT-4o-mini → sentence-by-sentence Browser TTS
+      ttsLabel.textContent = 'GPT-4o-mini · Streaming…';
+      let sentenceBuffer = '';
+      let sentenceIndex = 0;
+      let totalUtterances = 0;
+      let finishedUtterances = 0;
+      let streamDone = false;
+
+      // Helper: speak a sentence immediately
+      function speakSentence(text) {
+        if (!text.trim()) return;
+        totalUtterances++;
+        const u = new SpeechSynthesisUtterance(text.trim());
+        u.lang = 'de-DE';
+        u.rate = 1.1;
+        u.onstart = () => {
+          STATE.isPlaying = true;
+          ttsLabel.textContent = `Browser TTS · Satz ${sentenceIndex}`;
+        };
+        u.onend = () => {
+          finishedUtterances++;
+          // Check if all sentences are done AND the stream has finished
+          if (streamDone && finishedUtterances >= totalUtterances) {
+            processQueue();
+          }
+        };
+        u.onerror = (e) => {
+          console.warn('TTS utterance error:', e);
+          finishedUtterances++;
+          if (streamDone && finishedUtterances >= totalUtterances) {
+            processQueue();
+          }
+        };
+        speechSynthesis.speak(u);
+        sentenceIndex++;
+      }
+
+      // Helper: flush any remaining text in the buffer
+      function flushBuffer() {
+        if (sentenceBuffer.trim()) {
+          speakSentence(sentenceBuffer);
+          sentenceBuffer = '';
+        }
+      }
+
       try {
         const chatResp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -1620,35 +1662,47 @@
           const lines = buf.split('\n'); buf = lines.pop();
           for (const line of lines) {
             if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
-            try { const chunk = JSON.parse(line.slice(6)); narration += chunk.choices?.[0]?.delta?.content || ''; ttsLabel.textContent = narration.length > 55 ? '…' + narration.slice(-55) : narration; } catch { }
+            try {
+              const chunk = JSON.parse(line.slice(6));
+              const content = chunk.choices?.[0]?.delta?.content || '';
+              sentenceBuffer += content;
+
+              // Detect sentence boundaries: . ! ? followed by a space or end
+              const sentenceEnd = sentenceBuffer.search(/[.!?]\s/);
+              if (sentenceEnd !== -1) {
+                const sentence = sentenceBuffer.slice(0, sentenceEnd + 1);
+                sentenceBuffer = sentenceBuffer.slice(sentenceEnd + 2);
+                speakSentence(sentence);
+              }
+
+              // Update label with live text
+              const preview = (sentenceBuffer || '').slice(-50);
+              ttsLabel.textContent = preview ? '…' + preview : `Browser TTS · Satz ${sentenceIndex}`;
+            } catch { }
           }
         }
-      } catch (err) { console.error('Chat failed:', err); demoNarration(poi); return; }
 
-      // 4. OpenAI TTS → Blob URL
-      ttsLabel.textContent = 'OpenAI TTS…';
-      try {
-        const ttsResp = await fetch('https://api.openai.com/v1/audio/speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: 'ash', input: narration, instructions: 'Sprich wie ein freundlicher Reisefuhrer. Naturlich, warmherzig, begeistert.', response_format: 'mp3', speed: 1.15 }),
-          signal: AbortSignal.timeout(30000)
-        });
-        if (!ttsResp.ok) throw new Error(`TTS API ${ttsResp.status}`);
+        // Stream finished — flush remaining buffer
+        flushBuffer();
+        streamDone = true;
+        ttsLabel.textContent = `Browser TTS · ${totalUtterances} Sätze`;
 
-        const blob = new Blob([await ttsResp.arrayBuffer()], { type: 'audio/mpeg' });
-        const blobUrl = URL.createObjectURL(blob);
-        const audio = document.getElementById('audioEl');
-        if (audio._blobUrl) URL.revokeObjectURL(audio._blobUrl);
-        audio._blobUrl = blobUrl;
-        audio.src = blobUrl;
-        audio.load();
-        audio.play().then(() => { STATE.isPlaying = true; ttsLabel.textContent = 'OpenAI TTS · ash'; trackAudioProgress(); })
-          .catch(err => { console.warn('Audio play failed:', err); ttsLabel.textContent = 'Browser TTS'; const u = new SpeechSynthesisUtterance(narration); u.lang = 'de-DE'; u.rate = 1.1; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true; });
+        // If no utterances were queued at all, process queue immediately
+        if (totalUtterances === 0) {
+          processQueue();
+        }
+        // If all utterances already finished before streamDone was set
+        if (finishedUtterances >= totalUtterances) {
+          processQueue();
+        }
+
       } catch (err) {
-        console.error('TTS failed:', err);
-        ttsLabel.textContent = 'Browser TTS (Fallback)';
-        const u = new SpeechSynthesisUtterance(narration); u.lang = 'de-DE'; u.rate = 1.1; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true;
+        console.error('Chat stream failed:', err);
+        streamDone = true;
+        flushBuffer();
+        if (totalUtterances === 0) {
+          demoNarration(poi);
+        }
       }
     }
 
