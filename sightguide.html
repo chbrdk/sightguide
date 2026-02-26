@@ -1685,7 +1685,7 @@
 
       if (useElevenLabs) {
         ttsLabel.textContent = 'ElevenLabs WS Verbinden…';
-        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi_api_key=${elKey}`;
+        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi-api-key=${elKey}`;
         elWs = new WebSocket(wsUrl);
 
         elWs.onopen = () => {
