@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SightGuide">
+  <meta name="theme-color" content="#f9f9fb">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+  <title>SightGuide AI</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #f9f9fb;
+      --bg-secondary: #f0f2f5;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f5f6f8;
+      --accent: #d69e2e;
+      --accent-dim: #b7791f;
+      --accent-glow: rgba(214, 158, 46, 0.15);
+      --text-primary: #1a202c;
+      --text-secondary: #4a5568;
+      --text-muted: #718096;
+      --border: rgba(0, 0, 0, 0.08);
+      --speed-walk: #38a169;
+      --speed-stand: #d69e2e;
+      --speed-drive: #e53e3e;
+      --radius: 14px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100dvh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      /* iOS PWA Optimizations */
+      overscroll-behavior-y: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    input,
+    textarea {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    /* ─── HEADER ─── */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: calc(12px + env(safe-area-inset-top)) 20px 12px;
+      background: linear-gradient(to bottom, var(--bg-primary) 60%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 6px 14px 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.3s ease;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s ease;
+    }
+
+    .status-pill.active .status-dot {
+      background: var(--speed-walk);
+      box-shadow: 0 0 8px rgba(56, 161, 105, 0.5);
+      animation: pulse-dot 2s ease infinite;
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    /* ─── MAP ─── */
+    .map-container {
+      position: relative;
+      height: 40dvh;
+      height: 40vh;
+      margin-top: calc(52px + env(safe-area-inset-top));
+      overflow: hidden;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-secondary);
+      z-index: 1;
+    }
+
+    /* Light map style */
+    .leaflet-tile-pane img {
+      filter: saturate(0.9) brightness(1.0) contrast(1.0);
+    }
+
+    .leaflet-control-zoom {
+      display: none !important;
+    }
+
+    .leaflet-control-attribution {
+      display: none !important;
+    }
+
+    .leaflet-marker-icon {
+      background: none !important;
+      border: none !important;
+    }
+
+    .map-overlay-bottom {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background: linear-gradient(to top, var(--bg-primary), transparent);
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    /* ─── TELEMETRY BAR ─── */
+    .telemetry {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      margin: -20px 16px 0;
+      position: relative;
+      z-index: 60;
+      background: var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .tele-item {
+      background: var(--bg-card);
+      padding: 12px 12px;
+      text-align: center;
+    }
+
+    .tele-item:first-child {
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+
+    .tele-item:last-child {
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
+    .tele-label {
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .tele-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-primary);
+      transition: color 0.3s ease;
+    }
+
+    .tele-unit {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-family: 'DM Sans', sans-serif;
+      margin-left: 2px;
+    }
+
+    /* ─── SPEED MODE INDICATOR ─── */
+    .mode-bar {
+      margin: 16px 16px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.3s ease;
+    }
+
+    .mode-bar.stand {
+      border-color: rgba(214, 158, 46, 0.3);
+    }
+
+    .mode-bar.walk {
+      border-color: rgba(56, 161, 105, 0.3);
+    }
+
+    .mode-bar.drive {
+      border-color: rgba(229, 62, 62, 0.3);
+    }
+
+    .mode-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: background 0.3s ease;
+    }
+
+    .mode-bar.stand .mode-icon {
+      background: rgba(214, 158, 46, 0.15);
+    }
+
+    .mode-bar.walk .mode-icon {
+      background: rgba(56, 161, 105, 0.15);
+    }
+
+    .mode-bar.drive .mode-icon {
+      background: rgba(229, 62, 62, 0.15);
+    }
+
+    .mode-info {
+      flex: 1;
+    }
+
+    .mode-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .mode-bar.stand .mode-title {
+      color: var(--speed-stand);
+    }
+
+    .mode-bar.walk .mode-title {
+      color: var(--speed-walk);
+    }
+
+    .mode-bar.drive .mode-title {
+      color: var(--speed-drive);
+    }
+
+    .mode-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
+
+    .mode-tts {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      border-radius: 100px;
+      background: rgba(0, 0, 0, 0.05);
+      color: var(--text-secondary);
+    }
+
+    /* ─── POI SECTION ─── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 16px 12px;
+    }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .section-count {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      padding: 4px 10px;
+      border-radius: 100px;
+    }
+
+    .poi-list {
+      padding: 0 16px calc(120px + env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .poi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      gap: 14px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .poi-card:active {
+      transform: scale(0.98);
+      background: var(--bg-card-hover);
+    }
+
+    .poi-card.playing {
+      border-color: rgba(214, 158, 46, 0.4);
+    }
+
+    .poi-card.playing::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-dim));
+    }
+
+    .poi-card.heard {
+      opacity: 0.45;
+    }
+
+    .poi-direction {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .poi-arrow {
+      font-size: 18px;
+      transition: transform 0.5s ease;
+      color: var(--accent);
+    }
+
+    .poi-distance-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: var(--accent-dim);
+      opacity: 0.5;
+    }
+
+    .poi-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .poi-name {
+      font-family: 'Playfair Display', serif;
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .poi-type {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .poi-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .poi-play-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+    }
+
+    .poi-play-btn:active {
+      transform: scale(0.9);
+    }
+
+    .poi-play-btn svg {
+      fill: #ffffff;
+      width: 16px;
+      height: 16px;
+      margin-left: 2px;
+    }
+
+    .poi-play-btn.loading {
+      animation: pulse-btn 1s ease infinite;
+    }
+
+    .poi-play-btn.playing svg {
+      margin-left: 0;
+    }
+
+    @keyframes pulse-btn {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    /* ─── EMPTY / START STATE ─── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 32px;
+    }
+
+    .empty-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+
+    .empty-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .empty-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .start-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 20px auto 0;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+      color: #ffffff;
+      border: none;
+      border-radius: 100px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .start-btn:active {
+      transform: scale(0.96);
+    }
+
+    /* ─── AUDIO PLAYER BOTTOM BAR ─── */
+    .audio-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .audio-bar.visible {
+      transform: translateY(0);
+    }
+
+    .audio-bar-inner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .audio-progress {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .audio-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.3s linear;
+    }
+
+    .audio-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .audio-name {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .audio-tts {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 1px;
+    }
+
+    .audio-ctrl {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .audio-ctrl svg {
+      fill: #ffffff;
+      width: 14px;
+      height: 14px;
+    }
+
+    .audio-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0, 0, 0, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+
+    /* ─── N8N CONFIG PANEL ─── */
+    .config-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .config-panel.open {
+      display: flex;
+    }
+
+    .config-sheet {
+      width: 100%;
+      max-width: 500px;
+      background: var(--bg-secondary);
+      border-radius: 20px 20px 0 0;
+      padding: 24px 20px calc(20px + env(safe-area-inset-bottom));
+      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+      }
+    }
+
+    .config-handle {
+      width: 36px;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 2px;
+      margin: 0 auto 20px;
+    }
+
+    .config-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .config-field {
+      margin-bottom: 14px;
+    }
+
+    .config-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .config-input {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .config-input:focus {
+      border-color: var(--accent-dim);
+    }
+
+    .config-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .config-save {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    /* ─── DEMO BADGE ─── */
+    .demo-badge {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 90;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: opacity 0.3s;
+    }
+
+    .demo-badge:hover {
+      opacity: 0.7;
+    }
+
+    .audio-bar.visible~.demo-badge,
+    .audio-bar.visible~.demo-badge-test {
+      bottom: 80px;
+    }
+
+    .demo-badge-test {
+      position: fixed;
+      bottom: 16px;
+      right: 110px;
+      z-index: 90;
+      background: linear-gradient(135deg, rgba(214, 158, 46, 0.15), rgba(214, 158, 46, 0.05));
+      border: 1px solid rgba(214, 158, 46, 0.25);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 11px;
+      color: var(--accent);
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 500;
+    }
+
+    .demo-badge-test:hover {
+      opacity: 0.7;
+    }
+
+    .demo-badge-test:active {
+      transform: scale(0.95);
+    }
+
+    /* ─── UTILITIES ─── */
+    .fade-in {
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+    }
+
+    /* ─── POI DETAIL SHEET ─── */
+    .detail-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .detail-overlay.open {
+      display: block;
+      opacity: 1;
+    }
+
+    .detail-sheet {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 210;
+      background: var(--bg-card);
+      border-radius: 20px 20px 0 0;
+      padding: 0 0 calc(20px + env(safe-area-inset-bottom));
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 85dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-sheet.open {
+      transform: translateY(0);
+    }
+
+    .detail-handle {
+      width: 40px;
+      height: 5px;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 3px;
+      margin: 12px auto;
+      flex-shrink: 0;
+    }
+
+    .detail-content {
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      /* allow scrolling inside sheet */
+      padding: 0 20px 20px;
+      -webkit-user-select: text;
+      /* Allow selecting Wikipedia text */
+      user-select: text;
+    }
+
+    .detail-img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      background: var(--bg-secondary);
+      display: none;
+    }
+
+    .detail-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .detail-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .detail-text {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .detail-wiki-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      margin-top: 10px;
+    }
+
+    .detail-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .detail-btn-primary {
+      flex: 1;
+      padding: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .detail-btn-close {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      background: var(--bg-secondary);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">Sight<span>Guide</span> AI</div>
+    <div class="status-pill" id="statusPill">
+      <div class="status-dot"></div>
+      <span id="statusText">Inaktiv</span>
+    </div>
+  </header>
+
+  <!-- MAP -->
+  <div class="map-container">
+    <div id="map"></div>
+    <div class="map-overlay-bottom"></div>
+  </div>
+
+  <!-- TELEMETRY -->
+  <div class="telemetry">
+    <div class="tele-item">
+      <div class="tele-label">Heading</div>
+      <div class="tele-value" id="telHeading">—<span class="tele-unit">°</span></div>
+    </div>
+    <div class="tele-item">
+      <div class="tele-label">Speed</div>
+      <div class="tele-value" id="telSpeed">—<span class="tele-unit">km/h</span></div>
+    </div>
+    <div class="tele-item">
+      <div class="tele-label">POIs</div>
+      <div class="tele-value" id="telPOIs">—</div>
+    </div>
+  </div>
+
+  <!-- SPEED MODE -->
+  <div class="mode-bar stand" id="modeBar">
+    <div class="mode-icon" id="modeIcon">👁</div>
+    <div class="mode-info">
+      <div class="mode-title" id="modeTitle">Erkunden</div>
+      <div class="mode-desc" id="modeDesc">Detaillierte Beschreibungen</div>
+    </div>
+    <div class="mode-tts" id="modeTTS">ElevenLabs</div>
+  </div>
+
+  <!-- POI LIST -->
+  <div class="section-header" id="poiHeader" style="display:none">
+    <div class="section-title">In deiner Nähe</div>
+    <div class="section-count" id="poiCount">0 Orte</div>
+  </div>
+
+  <div class="poi-list" id="poiList">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🧭</div>
+      <div class="empty-title">Bereit zum Entdecken</div>
+      <div class="empty-desc">Aktiviere GPS und SightGuide findet automatisch Sehenswürdigkeiten in deiner
+        Blickrichtung.</div>
+      <button class="start-btn" id="startBtn" onclick="startTracking()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="3" />
+          <line x1="12" y1="2" x2="12" y2="6" />
+          <line x1="12" y1="18" x2="12" y2="22" />
+          <line x1="2" y1="12" x2="6" y2="12" />
+          <line x1="18" y1="12" x2="22" y2="12" />
+        </svg>
+        GPS aktivieren
+      </button>
+      <button class="start-btn"
+        style="background: linear-gradient(135deg, rgba(214, 158, 46, 0.2), rgba(214, 158, 46, 0.08)); color: var(--accent); border: 1px solid rgba(214, 158, 46, 0.3); margin-top: 10px;"
+        onclick="runTestCall()">
+        🧪 Test-Modus: Brandenburger Tor
+      </button>
+    </div>
+  </div>
+
+  <!-- AUDIO BOTTOM BAR -->
+  <div class="audio-bar" id="audioBar">
+    <div class="audio-progress">
+      <div class="audio-progress-fill" id="audioProgress"></div>
+    </div>
+    <div class="audio-bar-inner">
+      <button class="audio-ctrl" id="audioPlayPause" onclick="toggleAudio()">
+        <svg viewBox="0 0 24 24">
+          <polygon points="6,4 20,12 6,20" />
+        </svg>
+      </button>
+      <div class="audio-info">
+        <div class="audio-name" id="audioName">—</div>
+        <div class="audio-tts" id="audioTTSLabel">ElevenLabs Premium</div>
+      </div>
+      <button class="audio-close" onclick="closeAudio()">✕</button>
+    </div>
+  </div>
+
+  <!-- POI DETAIL SHEET -->
+  <div class="detail-overlay" id="detailOverlay" onclick="closePOIDetail()"></div>
+  <div class="detail-sheet" id="detailSheet">
+    <div class="detail-handle"></div>
+    <div class="detail-content" id="detailContent">
+      <img src="" alt="" class="detail-img" id="detailImg">
+      <div class="detail-title" id="detailTitle">—</div>
+      <div class="detail-meta">
+        <span id="detailType">—</span>
+        <span id="detailDist">—</span>
+      </div>
+      <div class="detail-text" id="detailText">Lade Informationen...</div>
+      <a href="#" target="_blank" class="detail-wiki-link" id="detailWikiLink" style="display: none;">
+        Wikipedia Artikel lesen ↗
+      </a>
+      <div class="detail-actions" style="margin-top: 24px;">
+        <button class="detail-btn-primary" id="detailPlayBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" style="flex-shrink:0">
+            <polygon points="6,4 20,12 6,20" />
+          </svg>
+          Vorlesen lassen
+        </button>
+        <button class="detail-btn-close" onclick="closePOIDetail()">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIG PANEL -->
+  <div class="config-panel" id="configPanel">
+    <div class="config-sheet">
+      <div class="config-handle"></div>
+      <div class="config-title">Backend-Einstellungen</div>
+      <div class="config-field">
+        <div class="config-label">OpenAI API Key</div>
+        <input class="config-input" id="cfgOpenAI" type="password" placeholder="sk-proj-..." />
+      </div>
+      <div class="config-field">
+        <div class="config-label">n8n Webhook URL (Fallback)</div>
+        <input class="config-input" id="cfgWebhook" placeholder="https://your-n8n.app/webhook/sightguide" />
+      </div>
+      <div class="config-field">
+        <div class="config-label">Such-Radius (Meter)</div>
+        <input class="config-input" id="cfgRadius" type="number" value="500" />
+      </div>
+      <div class="config-field">
+        <div class="config-label">Sichtfeld (Grad)</div>
+        <input class="config-input" id="cfgFOV" type="number" value="120" />
+      </div>
+      <button class="config-save" onclick="saveConfig()">Speichern &amp; Schließen</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS BUTTON -->
+  <div class="demo-badge-test" onclick="runTestCall()">🧪 Test: Brandenburger Tor</div>
+  <div class="demo-badge" onclick="openConfig()">⚙ Backend</div>
+
+  <audio id="audioEl" preload="auto"></audio>
+
+  <script>
+    // ═══════════════════════════════════════════════════
+    // SightGuide AI — Prototype PWA
+    // ═══════════════════════════════════════════════════
+
+    const STATE = {
+      lat: null, lng: null,
+      heading: null,        // GPS heading (movement direction)
+      compassHeading: null, // device compass
+      speed: 0,             // m/s
+      speedKmh: 0,
+      mode: 'stand',        // stand | walk | drive
+      pois: [],
+      heardPOIs: new Set(JSON.parse(localStorage.getItem('sg_heard') || '[]')),
+      currentAudioPOI: null,
+      isPlaying: false,
+      isNarrating: false,       // true while a narration pipeline is running
+      narrationQueue: [],       // POIs waiting to be narrated
+      announcedPOIs: new Set(), // POIs already auto-queued (prevents re-queueing)
+      lastAutoQueue: 0,         // timestamp of last auto-queue
+      watchId: null,
+      map: null,
+      userMarker: null,
+      poiMarkers: [],
+      fovWedge: null,
+      lastPOIFetch: 0,
+      config: JSON.parse(localStorage.getItem('sg_config') || JSON.stringify({
+        webhookUrl: 'https://workflows.plygrnd.tech/webhook/sightguide',
+        openaiKey: '',
+        radius: 500,
+        fov: 120
+      }))
+    };
+
+    // ─── MAP SETUP ───
+    function initMap() {
+      STATE.map = L.map('map', {
+        center: [52.5163, 13.3777], // Berlin default (Brandenburger Tor)
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false
+      });
+
+      // Try CartoDB light tiles, fallback to OSM
+      const lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd'
+      });
+
+      const osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      });
+
+      lightTiles.on('tileerror', () => {
+        STATE.map.removeLayer(lightTiles);
+        osmTiles.addTo(STATE.map);
+      });
+
+      lightTiles.addTo(STATE.map);
+
+      // Force map to recalculate size after render
+      setTimeout(() => STATE.map.invalidateSize(), 100);
+      setTimeout(() => STATE.map.invalidateSize(), 500);
+
+      // Custom user marker
+      const userIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+      width: 20px; height: 20px;
+      background: #d69e2e;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 16px rgba(214,158,46,0.5);
+    "></div>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+
+      STATE.userMarker = L.marker([52.5163, 13.3777], { icon: userIcon }).addTo(STATE.map);
+    }
+
+    // ─── GPS TRACKING ───
+    function startTracking() {
+      if (!navigator.geolocation) {
+        alert('GPS wird von diesem Browser nicht unterstützt.');
+        return;
+      }
+
+      document.getElementById('startBtn').textContent = 'Verbinde…';
+
+      STATE.watchId = navigator.geolocation.watchPosition(
+        onPosition,
+        onGeoError,
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      );
+
+      // Request compass access (iOS 13+)
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(p => { if (p === 'granted') window.addEventListener('deviceorientation', onCompass); })
+          .catch(console.error);
+      } else {
+        window.addEventListener('deviceorientation', onCompass, true);
+      }
+
+      document.getElementById('statusPill').classList.add('active');
+      document.getElementById('statusText').textContent = 'Suche GPS…';
+    }
+
+    function onPosition(pos) {
+      const { latitude, longitude, heading, speed, accuracy } = pos.coords;
+
+      STATE.lat = latitude;
+      STATE.lng = longitude;
+      if (heading !== null && !isNaN(heading)) STATE.heading = heading;
+      STATE.speed = speed || 0;
+      STATE.speedKmh = Math.round((STATE.speed * 3.6) * 10) / 10;
+
+      // Update map
+      const latlng = [latitude, longitude];
+      STATE.userMarker.setLatLng(latlng);
+      STATE.map.panTo(latlng, { animate: true, duration: 0.5 });
+
+      // Update telemetry
+      const effectiveHeading = STATE.compassHeading ?? STATE.heading ?? 0;
+      document.getElementById('telHeading').innerHTML = `${Math.round(effectiveHeading)}<span class="tele-unit">°</span>`;
+      document.getElementById('telSpeed').innerHTML = `${STATE.speedKmh}<span class="tele-unit">km/h</span>`;
+      document.getElementById('statusText').textContent = `±${Math.round(accuracy)}m`;
+
+      // Determine mode
+      updateSpeedMode();
+
+      // Draw FOV wedge
+      drawFOV(latitude, longitude, effectiveHeading);
+
+      // Fetch POIs (throttled)
+      const now = Date.now();
+      if (now - STATE.lastPOIFetch > 8000) {
+        STATE.lastPOIFetch = now;
+        fetchPOIs(latitude, longitude);
+      }
+
+      // Update POI directions
+      updatePOIDirections(effectiveHeading);
+    }
+
+    function onCompass(e) {
+      // iOS gives webkitCompassHeading, Android gives alpha
+      if (e.webkitCompassHeading !== undefined) {
+        STATE.compassHeading = e.webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        STATE.compassHeading = 360 - e.alpha;
+      }
+    }
+
+    function onGeoError(err) {
+      console.error('Geo error:', err);
+      document.getElementById('statusText').textContent = 'GPS Fehler';
+    }
+
+    // ─── SPEED MODE LOGIC ───
+    function updateSpeedMode() {
+      const kmh = STATE.speedKmh;
+      let mode, icon, title, desc, tts;
+
+      if (kmh < 1.5) {
+        mode = 'stand'; icon = '👁'; title = 'Erkunden';
+        desc = 'Detaillierte Beschreibungen'; tts = 'ElevenLabs';
+      } else if (kmh < 8) {
+        mode = 'walk'; icon = '🚶'; title = 'Spaziergang';
+        desc = 'POIs entlang deiner Route'; tts = 'ElevenLabs';
+      } else {
+        mode = 'drive'; icon = '🚗'; title = 'Fahrt-Modus';
+        desc = 'Nur Highlights, kurz & knapp'; tts = 'OpenAI TTS';
+      }
+
+      STATE.mode = mode;
+      const bar = document.getElementById('modeBar');
+      bar.className = `mode-bar ${mode}`;
+      document.getElementById('modeIcon').textContent = icon;
+      document.getElementById('modeTitle').textContent = title;
+      document.getElementById('modeDesc').textContent = desc;
+      document.getElementById('modeTTS').textContent = tts;
+    }
+
+    // ─── FOV VISUALIZATION ───
+    function drawFOV(lat, lng, heading) {
+      if (STATE.fovWedge) STATE.map.removeLayer(STATE.fovWedge);
+
+      const fov = STATE.config.fov;
+      const radius = STATE.config.radius;
+      const startAngle = heading - fov / 2;
+      const endAngle = heading + fov / 2;
+
+      const points = [[lat, lng]];
+      for (let a = startAngle; a <= endAngle; a += 5) {
+        points.push(destPoint(lat, lng, a, radius));
+      }
+      points.push([lat, lng]);
+
+      STATE.fovWedge = L.polygon(points, {
+        color: 'rgba(214, 158, 46, 0.3)',
+        fillColor: 'rgba(214, 158, 46, 0.08)',
+        weight: 1,
+        fillOpacity: 1
+      }).addTo(STATE.map);
+    }
+
+    function destPoint(lat, lng, bearing, distance) {
+      const R = 6371000;
+      const d = distance / R;
+      const brng = bearing * Math.PI / 180;
+      const lat1 = lat * Math.PI / 180;
+      const lon1 = lng * Math.PI / 180;
+      const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+      const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
+      return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
+    }
+
+    // ─── POI FETCHING (Overpass API) ───
+    async function fetchPOIs(lat, lng) {
+      const radius = STATE.config.radius;
+      const query = `
+    [out:json][timeout:10];
+    (
+      node["tourism"~"attraction|artwork|viewpoint|museum|gallery"](around:${radius},${lat},${lng});
+      node["historic"](around:${radius},${lat},${lng});
+      node["amenity"~"place_of_worship|theatre|cinema"](around:${radius},${lat},${lng});
+      node["building"~"cathedral|church|castle|palace"](around:${radius},${lat},${lng});
+      way["tourism"~"attraction|artwork|viewpoint|museum|gallery"](around:${radius},${lat},${lng});
+      way["historic"](around:${radius},${lat},${lng});
+    );
+    out center body 20;
+  `;
+
+      const OVERPASS_MIRRORS = [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+      ];
+
+      async function fetchOverpass(query) {
+        for (const endpoint of OVERPASS_MIRRORS) {
+          try {
+            const resp = await fetch(endpoint, {
+              method: 'POST',
+              body: 'data=' + encodeURIComponent(query),
+              signal: AbortSignal.timeout(12000)
+            });
+            if (!resp.ok) { console.warn(`Overpass ${endpoint} → HTTP ${resp.status}, trying next…`); continue; }
+            const text = await resp.text();
+            if (!text.trim().startsWith('{')) { console.warn(`Overpass ${endpoint} returned non-JSON, trying next…`); continue; }
+            return JSON.parse(text);
+          } catch (err) {
+            console.warn(`Overpass ${endpoint} failed:`, err.message);
+          }
+        }
+        return null;
+      }
+
+      try {
+        const data = await fetchOverpass(query);
+        if (!data) { console.error('All Overpass mirrors failed.'); return; }
+
+        const pois = data.elements
+          .filter(el => el.tags && (el.tags.name || el.tags['name:de']))
+          .map(el => {
+            const poiLat = el.lat || el.center?.lat;
+            const poiLng = el.lon || el.center?.lon;
+            const name = el.tags['name:de'] || el.tags.name;
+            const dist = haversine(lat, lng, poiLat, poiLng);
+            const bearing = getBearing(lat, lng, poiLat, poiLng);
+            const type = el.tags.tourism || el.tags.historic || el.tags.amenity || el.tags.building || 'Sehenswürdigkeit';
+            const wiki = el.tags.wikipedia || el.tags['wikipedia:de'] || null;
+
+            return {
+              id: el.id,
+              name, type, dist, bearing,
+              lat: poiLat, lng: poiLng,
+              wiki,
+              heard: STATE.heardPOIs.has(el.id)
+            };
+          })
+          .sort((a, b) => a.dist - b.dist);
+
+        STATE.pois = pois;
+        renderPOIs(pois);
+        renderMapMarkers(pois);
+      } catch (err) {
+        console.error('Overpass error:', err);
+      }
+
+    }
+
+    // ─── HEADING-BASED FILTERING & RANKING ───
+    function filterByHeading(pois, heading) {
+      if (heading === null) return pois;
+      const halfFOV = STATE.config.fov / 2;
+
+      return pois
+        .map(p => {
+          let diff = Math.abs(p.bearing - heading);
+          if (diff > 180) diff = 360 - diff;
+          return { ...p, angleDiff: diff, inFOV: diff <= halfFOV };
+        })
+        .sort((a, b) => {
+          // In FOV first, then by distance
+          if (a.inFOV && !b.inFOV) return -1;
+          if (!a.inFOV && b.inFOV) return 1;
+          return a.dist - b.dist;
+        });
+    }
+
+    function updatePOIDirections(heading) {
+      const filtered = filterByHeading(STATE.pois, heading);
+      document.getElementById('telPOIs').textContent = filtered.filter(p => p.inFOV).length;
+
+      filtered.forEach(p => {
+        const arrow = document.getElementById(`arrow-${p.id}`);
+        if (arrow) {
+          const relAngle = p.bearing - heading;
+          arrow.style.transform = `rotate(${relAngle}deg)`;
+          arrow.parentElement.style.opacity = p.inFOV ? 1 : 0.3;
+        }
+      });
+
+      // ─── AUTO-NARRATION: queue unheard POIs entering FOV ───
+      const now = Date.now();
+      filtered.forEach(p => {
+        if (p.inFOV && !p.heard && !STATE.announcedPOIs.has(p.id)) {
+          // Cooldown: 3s between auto-queues
+          if (now - STATE.lastAutoQueue < 3000) return;
+          // Max queue size
+          if (STATE.narrationQueue.length >= 3) return;
+
+          STATE.announcedPOIs.add(p.id);
+          STATE.lastAutoQueue = now;
+          requestNarration(String(p.id), false); // false = not priority
+        }
+      });
+    }
+
+    // ─── RENDER POI LIST ───
+    function renderPOIs(pois) {
+      const list = document.getElementById('poiList');
+      const header = document.getElementById('poiHeader');
+      const empty = document.getElementById('emptyState');
+
+      if (pois.length === 0) {
+        if (STATE.watchId !== null) {
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>
+        <div class="empty-title">Keine POIs gefunden</div>
+        <div class="empty-desc">Bewege dich weiter oder erhöhe den Suchradius.</div></div>`;
+        }
+        header.style.display = 'none';
+        return;
+      }
+
+      if (empty) empty.style.display = 'none';
+      header.style.display = 'flex';
+      document.getElementById('poiCount').textContent = `${pois.length} Orte`;
+
+      const typeIcons = {
+        attraction: '⭐', museum: '🏛', viewpoint: '👀', artwork: '🎨',
+        castle: '🏰', memorial: '🪦', church: '⛪', cathedral: '⛪',
+        place_of_worship: '🕌', theatre: '🎭', monument: '🗿',
+        ruins: '🏚', archaeological_site: '⛏', gallery: '🖼'
+      };
+
+      list.innerHTML = pois.map(p => `
+    <div class="poi-card fade-in ${p.heard ? 'heard' : ''}" onclick="openPOIDetail('${p.id}')">
+      <div class="poi-direction">
+        <div class="poi-arrow" id="arrow-${p.id}">↑</div>
+      </div>
+      <div class="poi-content">
+        <div class="poi-name">${p.name}</div>
+        <div class="poi-type">${typeIcons[p.type] || '📍'} ${p.type}</div>
+        <div class="poi-meta">
+          <span>${p.dist < 1000 ? Math.round(p.dist) + 'm' : (p.dist / 1000).toFixed(1) + 'km'}</span>
+          <span>${Math.round(p.bearing)}°</span>
+          ${p.heard ? '<span>✓ gehört</span>' : ''}
+        </div>
+      </div>
+      <button class="poi-play-btn" onclick="event.stopPropagation(); requestNarration('${p.id}')">
+        <svg viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20"/></svg>
+      </button>
+    </div>
+  `).join('');
+    }
+
+    // ─── MAP MARKERS ───
+    function renderMapMarkers(pois) {
+      STATE.poiMarkers.forEach(m => STATE.map.removeLayer(m));
+      STATE.poiMarkers = [];
+
+      pois.forEach(p => {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+        width: 10px; height: 10px;
+        background: ${p.heard ? '#cbd5e0' : '#ffffff'};
+        border: 2px solid ${p.heard ? '#a0aec0' : '#d69e2e'};
+        border-radius: 50%;
+        box-shadow: 0 0 8px ${p.heard ? 'transparent' : 'rgba(214,158,46,0.3)'};
+      "></div>`,
+          iconSize: [10, 10], iconAnchor: [5, 5]
+        });
+
+        const marker = L.marker([p.lat, p.lng], { icon })
+          .bindTooltip(p.name, {
+            className: 'poi-tooltip',
+            direction: 'top', offset: [0, -8]
+          })
+          .on('click', () => openPOIDetail(p.id))
+          .addTo(STATE.map);
+        STATE.poiMarkers.push(marker);
+      });
+    }
+
+    // ─── NARRATION ROUTER (with queue guard) ───
+    async function requestNarration(poiId, priority = true) {
+      const poi = STATE.pois.find(p => String(p.id) === String(poiId));
+      if (!poi) return;
+
+      // If already narrating, push to queue instead
+      if (STATE.isNarrating) {
+        // Avoid duplicates in queue
+        if (STATE.narrationQueue.some(q => String(q.id) === String(poiId))) return;
+        if (priority) {
+          STATE.narrationQueue.unshift(poi); // manual tap → front of queue
+        } else {
+          STATE.narrationQueue.push(poi);    // auto FOV → back of queue
+        }
+        console.log(`📎 Queue: ${poi.name} (${priority ? 'priority' : 'auto'}) — ${STATE.narrationQueue.length} waiting`);
+        return;
+      }
+
+      STATE.isNarrating = true;
+
+      const btn = document.querySelector(`.poi-card:has(#arrow-${poiId}) .poi-play-btn`);
+      if (btn) btn.classList.add('loading');
+
+      document.getElementById('audioName').textContent = poi.name;
+      document.getElementById('audioBar').classList.add('visible');
+
+      // Unlock autoplay NOW, while still inside the user gesture context.
+      const audio = document.getElementById('audioEl');
+      audio.src = '';
+      audio.play().catch(() => { });
+
+      if (STATE.config.openaiKey) {
+        document.getElementById('audioTTSLabel').textContent = 'OpenAI · Wird generiert…';
+        await requestNarrationDirect(poi);
+      } else if (STATE.config.webhookUrl) {
+        document.getElementById('audioTTSLabel').textContent = 'n8n · Wird generiert…';
+        await requestNarrationWebhook(poi);
+      } else {
+        document.getElementById('audioTTSLabel').textContent = 'Browser TTS';
+        demoNarration(poi);
+      }
+
+      if (btn) btn.classList.remove('loading');
+      markAsHeard(poiId);
+      // Note: isNarrating stays true until audio ends → processQueue()
+    }
+
+    // ─── QUEUE PROCESSOR ───
+    function processQueue() {
+      STATE.isNarrating = false;
+      STATE.isPlaying = false;
+      if (STATE.narrationQueue.length === 0) {
+        // No more items — hide audio bar after a short delay
+        setTimeout(() => {
+          if (!STATE.isNarrating && !STATE.isPlaying) {
+            document.getElementById('audioBar').classList.remove('visible');
+            document.getElementById('audioProgress').style.width = '0%';
+          }
+        }, 1500);
+        return;
+      }
+      const next = STATE.narrationQueue.shift();
+      console.log(`▶ Queue: playing next → ${next.name} (${STATE.narrationQueue.length} remaining)`);
+      requestNarration(String(next.id), true);
+    }
+
+    // ─── DIRECT: Wikipedia + GPT-4o-mini (streaming) + OpenAI TTS ───
+    async function requestNarrationDirect(poi) {
+      const key = STATE.config.openaiKey;
+      const ttsLabel = document.getElementById('audioTTSLabel');
+
+      // 1. Fetch Wikipedia summary
+      ttsLabel.textContent = 'Wikipedia…';
+      let wikiText = '';
+      try {
+        const wikiResp = await fetch(
+          `https://de.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(poi.name)}`,
+          { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) }
+        );
+        if (wikiResp.ok) { const d = await wikiResp.json(); wikiText = d.extract || ''; }
+      } catch (e) { console.warn('Wikipedia fetch failed:', e.message); }
+
+      // 2. Narration length by mode
+      const modeInstr = { stand: 'Ausführlich, 4–6 Sätze. Geschichte, Details und Anekdoten.', walk: 'Mittel, 2–3 Sätze. Wichtigste Fakten plus eine interessante Info.', drive: 'Ultra-kurz, 1–2 Sätze. Nur das Wichtigste, knackig.' };
+      const systemPrompt = `Du bist ein charmanter Audio-Reisefuhrer namens "SightGuide". Sprich den Zuhorer direkt an, mische Fakten mit Anekdoten, sei warmherzig. ${modeInstr[STATE.mode] || modeInstr.stand} Antworte NUR mit dem gesprochenen Text, kein Markdown. Sprache: Deutsch.`;
+      const userContent = `POI: ${poi.name}\nTyp: ${poi.type}\nModus: ${STATE.mode}\n${wikiText ? 'Wikipedia:\n' + wikiText : ''}`;
+
+      // 3. Stream GPT-4o-mini narration
+      ttsLabel.textContent = 'GPT-4o-mini…';
+      let narration = '';
+      try {
+        const chatResp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+          body: JSON.stringify({ model: 'gpt-4o-mini', stream: true, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }] }),
+          signal: AbortSignal.timeout(20000)
+        });
+        if (!chatResp.ok) throw new Error(`Chat API ${chatResp.status}`);
+
+        const reader = chatResp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n'); buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
+            try { const chunk = JSON.parse(line.slice(6)); narration += chunk.choices?.[0]?.delta?.content || ''; ttsLabel.textContent = narration.length > 55 ? '…' + narration.slice(-55) : narration; } catch { }
+          }
+        }
+      } catch (err) { console.error('Chat failed:', err); demoNarration(poi); return; }
+
+      // 4. OpenAI TTS → Blob URL
+      ttsLabel.textContent = 'OpenAI TTS…';
+      try {
+        const ttsResp = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+          body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: 'ash', input: narration, instructions: 'Sprich wie ein freundlicher Reisefuhrer. Naturlich, warmherzig, begeistert.', response_format: 'mp3', speed: 1.15 }),
+          signal: AbortSignal.timeout(30000)
+        });
+        if (!ttsResp.ok) throw new Error(`TTS API ${ttsResp.status}`);
+
+        const blob = new Blob([await ttsResp.arrayBuffer()], { type: 'audio/mpeg' });
+        const blobUrl = URL.createObjectURL(blob);
+        const audio = document.getElementById('audioEl');
+        if (audio._blobUrl) URL.revokeObjectURL(audio._blobUrl);
+        audio._blobUrl = blobUrl;
+        audio.src = blobUrl;
+        audio.load();
+        audio.play().then(() => { STATE.isPlaying = true; ttsLabel.textContent = 'OpenAI TTS · ash'; trackAudioProgress(); })
+          .catch(err => { console.warn('Audio play failed:', err); ttsLabel.textContent = 'Browser TTS'; const u = new SpeechSynthesisUtterance(narration); u.lang = 'de-DE'; u.rate = 1.1; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true; });
+      } catch (err) {
+        console.error('TTS failed:', err);
+        ttsLabel.textContent = 'Browser TTS (Fallback)';
+        const u = new SpeechSynthesisUtterance(narration); u.lang = 'de-DE'; u.rate = 1.1; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true;
+      }
+    }
+
+    // ─── n8n WEBHOOK FALLBACK ───
+    async function requestNarrationWebhook(poi) {
+      try {
+        const resp = await fetch(STATE.config.webhookUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ poi_name: poi.name, poi_type: poi.type, poi_lat: poi.lat, poi_lng: poi.lng, poi_wiki: poi.wiki, user_lat: STATE.lat, user_lng: STATE.lng, user_heading: STATE.compassHeading ?? STATE.heading, user_speed: STATE.speedKmh, mode: STATE.mode, tts_engine: 'openai' })
+        });
+        const data = await resp.json();
+        if (data.audio_base64) {
+          const audio = document.getElementById('audioEl');
+          audio.src = data.audio_base64; audio.load();
+          audio.play().then(() => { STATE.isPlaying = true; trackAudioProgress(); })
+            .catch(() => { if (data.narration) { const u = new SpeechSynthesisUtterance(data.narration); u.lang = 'de-DE'; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true; } });
+        } else if (data.narration) {
+          const u = new SpeechSynthesisUtterance(data.narration); u.lang = 'de-DE'; u.rate = 1.1; u.onend = () => processQueue(); speechSynthesis.speak(u); STATE.isPlaying = true;
+        }
+      } catch (err) { console.error('Webhook error:', err); demoNarration(poi); }
+    }
+
+    // ─── DEMO MODE (Browser TTS) ───
+    function demoNarration(poi) {
+      if ('speechSynthesis' in window) {
+        const text = `Du siehst gerade ${poi.name}. Das ist ein ${poi.type}, etwa ${Math.round(poi.dist)} Meter von dir entfernt. Verbinde ein n8n Backend für ausführliche KI-generierte Beschreibungen mit ElevenLabs oder OpenAI Stimmen.`;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'de-DE';
+        utterance.rate = 1.1;
+        utterance.onend = () => processQueue();
+        speechSynthesis.speak(utterance);
+        STATE.isPlaying = true;
+        STATE.currentAudioPOI = poi.id;
+
+        // Fake progress
+        let prog = 0;
+        const interval = setInterval(() => {
+          prog += 2;
+          document.getElementById('audioProgress').style.width = prog + '%';
+          if (prog >= 100 || !STATE.isPlaying) {
+            clearInterval(interval);
+            STATE.isPlaying = false;
+          }
+        }, 200);
+      }
+    }
+
+    function markAsHeard(poiId) {
+      STATE.heardPOIs.add(Number(poiId));
+      localStorage.setItem('sg_heard', JSON.stringify([...STATE.heardPOIs]));
+      const poi = STATE.pois.find(p => String(p.id) === String(poiId));
+      if (poi) poi.heard = true;
+    }
+
+    // ─── AUDIO CONTROLS ───
+    function toggleAudio() {
+      const audio = document.getElementById('audioEl');
+      if (STATE.isPlaying) {
+        audio.pause();
+        speechSynthesis?.cancel();
+        STATE.isPlaying = false;
+      } else {
+        audio.play();
+        STATE.isPlaying = true;
+      }
+    }
+
+    function closeAudio() {
+      const audio = document.getElementById('audioEl');
+      audio.pause(); audio.src = '';
+      speechSynthesis?.cancel();
+      STATE.isPlaying = false;
+      STATE.isNarrating = false;
+      STATE.narrationQueue = []; // clear entire queue on manual close
+      document.getElementById('audioBar').classList.remove('visible');
+      document.getElementById('audioProgress').style.width = '0%';
+    }
+
+    function trackAudioProgress() {
+      const audio = document.getElementById('audioEl');
+      const update = () => {
+        if (audio.duration) {
+          const pct = (audio.currentTime / audio.duration) * 100;
+          document.getElementById('audioProgress').style.width = pct + '%';
+        }
+        if (!audio.paused) requestAnimationFrame(update);
+      };
+      requestAnimationFrame(update);
+    }
+
+    // ─── POI DETAIL SHEET ───
+    async function openPOIDetail(poiId) {
+      const poi = STATE.pois.find(p => String(p.id) === String(poiId));
+      if (!poi) return;
+
+      const overlay = document.getElementById('detailOverlay');
+      const sheet = document.getElementById('detailSheet');
+
+      document.getElementById('detailTitle').textContent = poi.name;
+      const typeIcons = {
+        attraction: '⭐', museum: '🏛', viewpoint: '👀', artwork: '🎨',
+        castle: '🏰', memorial: '🪦', church: '⛪', cathedral: '⛪',
+        place_of_worship: '🕌', theatre: '🎭', monument: '🗿',
+        ruins: '🏚', archaeological_site: '⛏', gallery: '🖼'
+      };
+      document.getElementById('detailType').textContent = `${typeIcons[poi.type] || '📍'} ${poi.type}`;
+      document.getElementById('detailDist').textContent = poi.dist < 1000 ? Math.round(poi.dist) + 'm' : (poi.dist / 1000).toFixed(1) + 'km';
+
+      document.getElementById('detailText').textContent = 'Lade Wikipedia...';
+      document.getElementById('detailImg').style.display = 'none';
+      document.getElementById('detailWikiLink').style.display = 'none';
+
+      document.getElementById('detailPlayBtn').onclick = () => {
+        closePOIDetail();
+        requestNarration(poiId);
+      };
+
+      overlay.classList.add('open');
+      // small delay to allow display:block to apply before transform
+      requestAnimationFrame(() => {
+        sheet.classList.add('open');
+      });
+
+      // Fetch Wiki Extract
+      try {
+        const title = poi.wiki ? poi.wiki.replace('de:', '') : poi.name;
+        const res = await fetch(`https://de.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.extract) {
+            document.getElementById('detailText').textContent = data.extract;
+          } else {
+            document.getElementById('detailText').textContent = 'Keine detaillierte Beschreibung auf Wikipedia gefunden.';
+          }
+          if (data.thumbnail && data.thumbnail.source) {
+            const img = document.getElementById('detailImg');
+            img.src = data.thumbnail.source;
+            img.style.display = 'block';
+          }
+          if (data.content_urls && data.content_urls.desktop) {
+            const link = document.getElementById('detailWikiLink');
+            link.href = data.content_urls.desktop.page;
+            link.style.display = 'inline-flex';
+          }
+        } else {
+          document.getElementById('detailText').textContent = 'Kein Wikipedia-Eintrag gefunden.';
+        }
+      } catch (e) {
+        document.getElementById('detailText').textContent = 'Fehler beim Laden der Informationen.';
+      }
+    }
+
+    function closePOIDetail() {
+      document.getElementById('detailSheet').classList.remove('open');
+      setTimeout(() => {
+        document.getElementById('detailOverlay').classList.remove('open');
+      }, 400); // Wait for transition
+    }
+
+    // ─── CONFIG ───
+    function openConfig() {
+      document.getElementById('cfgOpenAI').value = STATE.config.openaiKey || '';
+      document.getElementById('cfgWebhook').value = STATE.config.webhookUrl;
+      document.getElementById('cfgRadius').value = STATE.config.radius;
+      document.getElementById('cfgFOV').value = STATE.config.fov;
+      document.getElementById('configPanel').classList.add('open');
+    }
+
+    function saveConfig() {
+      STATE.config.openaiKey = document.getElementById('cfgOpenAI').value.trim();
+      STATE.config.webhookUrl = document.getElementById('cfgWebhook').value.trim();
+      STATE.config.radius = parseInt(document.getElementById('cfgRadius').value) || 500;
+      STATE.config.fov = parseInt(document.getElementById('cfgFOV').value) || 120;
+      localStorage.setItem('sg_config', JSON.stringify(STATE.config));
+      document.getElementById('configPanel').classList.remove('open');
+    }
+
+    document.getElementById('configPanel').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('configPanel')) {
+        document.getElementById('configPanel').classList.remove('open');
+      }
+    });
+
+    // ─── GEO MATH ───
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function getBearing(lat1, lon1, lat2, lon2) {
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+      const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+        Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+      return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+    }
+
+    // ─── TEST CALL: Brandenburg Gate ───
+    function runTestCall() {
+      // Simulate standing ~100m south of Brandenburg Gate, looking north
+      const testLat = 52.51500;
+      const testLng = 13.37770;
+      const testHeading = 355;
+
+      // Set state
+      STATE.lat = testLat; STATE.lng = testLng;
+      STATE.heading = testHeading; STATE.compassHeading = testHeading;
+      STATE.speed = 0; STATE.speedKmh = 0;
+
+      // Update UI
+      document.getElementById('statusPill').classList.add('active');
+      document.getElementById('statusText').textContent = 'Test-Modus';
+      document.getElementById('emptyState')?.remove();
+      STATE.userMarker.setLatLng([testLat, testLng]);
+      STATE.map.setView([testLat, testLng], 16, { animate: true });
+      document.getElementById('telHeading').innerHTML = `${testHeading}<span class="tele-unit">°</span>`;
+      document.getElementById('telSpeed').innerHTML = `0<span class="tele-unit">km/h</span>`;
+      updateSpeedMode();
+      drawFOV(testLat, testLng, testHeading);
+
+      // Fetch real POIs, then trigger narration for Brandenburg Gate via the same routing system
+      fetchPOIs(testLat, testLng).then(() => {
+        updatePOIDirections(testHeading);
+        const testPOI = { id: 'test-bg', name: 'Brandenburger Tor', type: 'attraction', lat: 52.51627, lng: 13.37770, wiki: 'de:Brandenburger Tor', dist: 110, heard: false };
+        if (!STATE.pois.find(p => p.name === 'Brandenburger Tor')) STATE.pois.unshift(testPOI);
+        document.getElementById('audioName').textContent = 'Brandenburger Tor';
+        document.getElementById('audioBar').classList.add('visible');
+        if (STATE.config.openaiKey) {
+          document.getElementById('audioTTSLabel').textContent = 'OpenAI · Wird generiert…';
+          requestNarrationDirect(testPOI);
+        } else if (STATE.config.webhookUrl) {
+          document.getElementById('audioTTSLabel').textContent = 'n8n · Wird generiert…';
+          requestNarrationWebhook(testPOI);
+        } else {
+          demoNarration(testPOI);
+        }
+      });
+
+      // Visual feedback
+      const btn = document.querySelector('.demo-badge-test');
+      btn.textContent = '✅ Test aktiv!';
+      btn.style.borderColor = 'rgba(56, 161, 105, 0.5)';
+      setTimeout(() => { btn.textContent = '🧪 Test: Brandenburger Tor'; btn.style.borderColor = 'rgba(214, 158, 46, 0.25)'; }, 3000);
+    }
+
+
+
+    // ─── INIT ───
+    initMap();
+    // Wire audio end → queue processor
+    document.getElementById('audioEl').addEventListener('ended', processQueue);
+  </script>
+</body>
+
+</html>
