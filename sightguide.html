@@ -544,7 +544,8 @@
     }
 
     .audio-bar-inner {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
       align-items: center;
       gap: 12px;
     }
@@ -587,8 +588,8 @@
     }
 
     .audio-ctrl {
-      width: 36px;
-      height: 36px;
+      width: 56px;
+      height: 56px;
       border-radius: 50%;
       border: none;
       background: var(--accent);
@@ -596,17 +597,23 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      box-shadow: 0 4px 12px rgba(214, 158, 46, 0.4);
+      transition: transform 0.2s ease;
+    }
+
+    .audio-ctrl:active {
+      transform: scale(0.9);
     }
 
     .audio-ctrl svg {
       fill: #ffffff;
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
     }
 
     .audio-close {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       border: none;
       background: rgba(0, 0, 0, 0.06);
@@ -616,6 +623,7 @@
       cursor: pointer;
       color: var(--text-muted);
       font-size: 16px;
+      margin-left: auto;
     }
 
     /* ─── N8N CONFIG PANEL ─── */
@@ -1006,16 +1014,20 @@
       <div class="audio-progress-fill" id="audioProgress"></div>
     </div>
     <div class="audio-bar-inner">
-      <button class="audio-ctrl" id="audioPlayPause" onclick="toggleAudio()">
-        <svg viewBox="0 0 24 24">
-          <polygon points="6,4 20,12 6,20" />
-        </svg>
-      </button>
       <div class="audio-info">
         <div class="audio-name" id="audioName">—</div>
         <div class="audio-tts" id="audioTTSLabel">ElevenLabs Premium</div>
       </div>
-      <button class="audio-close" onclick="closeAudio()">✕</button>
+      <div style="display:flex; justify-content:center;">
+        <button class="audio-ctrl" id="audioPlayPause" onclick="toggleAudio()">
+          <svg id="audioIconSvg" viewBox="0 0 24 24">
+            <polygon points="6,4 20,12 6,20" />
+          </svg>
+        </button>
+      </div>
+      <div>
+        <button class="audio-close" onclick="closeAudio()">✕</button>
+      </div>
     </div>
   </div>
 
@@ -1583,6 +1595,7 @@
       if (STATE.narrationQueue.length === 0) {
         STATE.currentAudioPOI = null;
         renderMapMarkers(STATE.pois);
+        updateAudioIcon();
         // No more items — hide audio bar after a short delay
         setTimeout(() => {
           if (!STATE.isNarrating && !STATE.isPlaying) {
@@ -1636,7 +1649,7 @@
         const u = new SpeechSynthesisUtterance(text.trim());
         u.lang = 'de-DE';
         u.rate = 1.1;
-        u.onstart = () => { STATE.isPlaying = true; };
+        u.onstart = () => { STATE.isPlaying = true; updateAudioIcon(); };
         u.onend = () => {
           finishedUtterances++;
           if (streamDone && finishedUtterances >= totalUtterances) processQueue();
@@ -1723,9 +1736,22 @@
           const res = JSON.parse(event.data);
           console.log("ElevenLabs WS: NACHRICHT EMPFANGEN:", Object.keys(res), " isFinal:", res.isFinal);
           if (res.audio) {
-            STATE.isPlaying = true;
+            if (!STATE.isPlaying) {
+              STATE.isPlaying = true;
+              updateAudioIcon();
+            }
             document.getElementById('audioTTSLabel').textContent = 'ElevenLabs WS · Live';
-            appendAudioChunk(res.audio);
+            const binaryString = window.atob(res.audio);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+            if (sourceBuffer && !sourceBuffer.updating) {
+              try { sourceBuffer.appendBuffer(bytes.buffer); }
+              catch (err) { chunkQueue.push(bytes.buffer); }
+            } else {
+              chunkQueue.push(bytes.buffer);
+            }
           }
           if (res.isFinal) {
             console.log("ElevenLabs WS: isFinal erreicht.");
@@ -1871,6 +1897,7 @@
         utterance.onend = () => processQueue();
         speechSynthesis.speak(utterance);
         STATE.isPlaying = true;
+        updateAudioIcon();
         STATE.currentAudioPOI = poi.id;
 
         // Fake progress
@@ -1894,16 +1921,27 @@
     }
 
     // ─── AUDIO CONTROLS ───
+    function updateAudioIcon() {
+      const svg = document.getElementById('audioIconSvg');
+      if (STATE.isPlaying) {
+        svg.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="white" /><rect x="14" y="4" width="4" height="16" fill="white" />';
+      } else {
+        svg.innerHTML = '<polygon points="6,4 20,12 6,20" fill="white" />';
+      }
+    }
+
     function toggleAudio() {
       const audio = document.getElementById('audioEl');
       if (STATE.isPlaying) {
         audio.pause();
-        speechSynthesis?.cancel();
+        speechSynthesis?.pause();
         STATE.isPlaying = false;
       } else {
-        audio.play();
+        audio.play().catch(() => console.warn("Audio play blocked"));
+        speechSynthesis?.resume();
         STATE.isPlaying = true;
       }
+      updateAudioIcon();
     }
 
     function closeAudio() {
@@ -1917,6 +1955,7 @@
       renderMapMarkers(STATE.pois);
       document.getElementById('audioBar').classList.remove('visible');
       document.getElementById('audioProgress').style.width = '0%';
+      updateAudioIcon();
     }
 
     function trackAudioProgress() {
@@ -2157,6 +2196,12 @@
           const len = binaryString.length;
           const bytes = new Uint8Array(len);
           for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+          // Ensure play state is updated visually
+          if (!STATE.isPlaying) {
+            STATE.isPlaying = true;
+            updateAudioIcon();
+          }
 
           if (sourceBuffer && !sourceBuffer.updating) {
             try { sourceBuffer.appendBuffer(bytes.buffer); }
