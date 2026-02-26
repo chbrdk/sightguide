@@ -1689,7 +1689,7 @@
 
       if (useElevenLabs) {
         ttsLabel.textContent = 'ElevenLabs WS Verbinden…';
-        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi-api-key=${elKey}`;
+        const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32`;
         console.log("ElevenLabs WS: Verbindungsaufbau starten...");
         elWs = new WebSocket(wsUrl);
 
@@ -1700,7 +1700,8 @@
           // Send initial config packet
           const initMsg = {
             text: " ",
-            voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true }
+            voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true },
+            xi_api_key: elKey
           };
           console.log("ElevenLabs WS: Sende INIT Nachricht:", initMsg);
           elWs.send(JSON.stringify(initMsg));
@@ -2091,7 +2092,7 @@
 
       console.log("TEST ELEVENLABS: Starte WebSocket...");
       const voiceId = 'JBFqnCBsd6RMkjVDRZzb'; // George
-      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi-api-key=${elKey}`;
+      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32`;
       const elWs = new WebSocket(wsUrl);
 
       document.getElementById('audioName').textContent = 'Test ElevenLabs';
@@ -2121,7 +2122,8 @@
 
         elWs.send(JSON.stringify({
           text: " ",
-          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true }
+          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true },
+          xi_api_key: elKey
         }));
 
         setTimeout(() => {
