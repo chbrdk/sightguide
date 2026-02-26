@@ -1686,27 +1686,33 @@
       if (useElevenLabs) {
         ttsLabel.textContent = 'ElevenLabs WS Verbinden…';
         const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi-api-key=${elKey}`;
+        console.log("ElevenLabs WS: Verbindungsaufbau starten...");
         elWs = new WebSocket(wsUrl);
 
         elWs.onopen = () => {
+          console.log("ElevenLabs WS: VERBUNDEN (onopen)");
           elWsOpen = true;
           initAudioStream();
           // Send initial config packet
-          elWs.send(JSON.stringify({
+          const initMsg = {
             text: " ",
             voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true }
-          }));
+          };
+          console.log("ElevenLabs WS: Sende INIT Nachricht:", initMsg);
+          elWs.send(JSON.stringify(initMsg));
           ttsLabel.textContent = 'ElevenLabs WS Verbunden';
         };
 
         elWs.onmessage = (event) => {
           const res = JSON.parse(event.data);
+          console.log("ElevenLabs WS: NACHRICHT EMPFANGEN:", Object.keys(res), " isFinal:", res.isFinal);
           if (res.audio) {
             STATE.isPlaying = true;
             document.getElementById('audioTTSLabel').textContent = 'ElevenLabs WS · Live';
             appendAudioChunk(res.audio);
           }
           if (res.isFinal) {
+            console.log("ElevenLabs WS: isFinal erreicht.");
             // The TTS finished processing all sent text
             setTimeout(() => {
               if (streamDone) processQueue();
@@ -1728,6 +1734,7 @@
       }
 
       try {
+        console.log("OpenAI: Starte GPT Stream...");
         const chatResp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
@@ -1769,7 +1776,10 @@
                 // Wait until we have at least a space to ensure a word boundary, or punctuation
                 if (sentenceBuffer.match(/[\s.!?]/)) {
                   if (elWsOpen && elWs.readyState === WebSocket.OPEN) {
+                    console.log("ElevenLabs WS: Sende Text-Chunk:", sentenceBuffer);
                     elWs.send(JSON.stringify({ text: sentenceBuffer }));
+                  } else {
+                    console.log("ElevenLabs WS: Kann Text-Chunk NICHT senden (WS nicht offen):", sentenceBuffer);
                   }
                   sentenceBuffer = '';
                 }
@@ -1781,11 +1791,16 @@
 
         // Stream done
         streamDone = true;
+        console.log("OpenAI: GPT Stream beendet.");
 
         if (useElevenLabs) {
           // Flush remaining text and send EOS
           if (elWsOpen && elWs.readyState === WebSocket.OPEN) {
-            if (sentenceBuffer) elWs.send(JSON.stringify({ text: sentenceBuffer }));
+            if (sentenceBuffer) {
+              console.log("ElevenLabs WS: Sende letzen Text-Chunk:", sentenceBuffer);
+              elWs.send(JSON.stringify({ text: sentenceBuffer }));
+            }
+            console.log("ElevenLabs WS: Sende EOS (End of Stream)");
             elWs.send(JSON.stringify({ text: "" })); // Empty text signals end of input streaming
           }
         } else {
