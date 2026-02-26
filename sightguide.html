@@ -1641,38 +1641,41 @@
         }
       }
 
-      // ── AudioContext for ElevenLabs WebSocket streaming ──
-      let audioCtx, nextAudioTime = 0;
-      function getAudioContext() {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        return audioCtx;
+      // ── MediaSource for streaming MP3 chunks from ElevenLabs ──
+      let mediaSource = null;
+      let sourceBuffer = null;
+      let chunkQueue = [];
+
+      function initAudioStream() {
+        const audio = document.getElementById('audioEl');
+        mediaSource = new MediaSource();
+        audio.src = URL.createObjectURL(mediaSource);
+
+        mediaSource.addEventListener('sourceopen', () => {
+          sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+          sourceBuffer.addEventListener('updateend', () => {
+            if (chunkQueue.length > 0 && !sourceBuffer.updating) {
+              try { sourceBuffer.appendBuffer(chunkQueue.shift()); } catch (e) { }
+            }
+          });
+        });
+        audio.play().catch(() => { });
       }
 
-      function playAudioChunk(base64Audio) {
-        const ctx = getAudioContext();
-        const binaryRaw = window.atob(base64Audio);
-        const len = binaryRaw.length;
+      function appendAudioChunk(base64Audio) {
+        const binaryString = window.atob(base64Audio);
+        const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) {
-          bytes[i] = binaryRaw.charCodeAt(i);
+          bytes[i] = binaryString.charCodeAt(i);
         }
 
-        ctx.decodeAudioData(bytes.buffer, (audioBuffer) => {
-          const source = ctx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(ctx.destination);
-
-          if (nextAudioTime < ctx.currentTime) {
-            nextAudioTime = ctx.currentTime;
-          }
-          source.start(nextAudioTime);
-          nextAudioTime += audioBuffer.duration;
-
-          source.onended = () => {
-            // Basic detection of queue end could go here, for now rely on stream finish
-          };
-        });
+        if (sourceBuffer && !sourceBuffer.updating) {
+          try { sourceBuffer.appendBuffer(bytes.buffer); }
+          catch (e) { chunkQueue.push(bytes.buffer); }
+        } else {
+          chunkQueue.push(bytes.buffer);
+        }
       }
 
       // If using ElevenLabs, open the WebSocket BEFORE reading the GPT stream
@@ -1687,6 +1690,7 @@
 
         elWs.onopen = () => {
           elWsOpen = true;
+          initAudioStream();
           // Send initial config packet
           elWs.send(JSON.stringify({
             text: " ",
@@ -1701,7 +1705,7 @@
           if (res.audio) {
             STATE.isPlaying = true;
             document.getElementById('audioTTSLabel').textContent = 'ElevenLabs WS · Live';
-            playAudioChunk(res.audio);
+            appendAudioChunk(res.audio);
           }
           if (res.isFinal) {
             // The TTS finished processing all sent text
