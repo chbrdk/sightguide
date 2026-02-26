@@ -1577,7 +1577,7 @@
       requestNarration(String(next.id), true);
     }
 
-    // ─── DIRECT: Wikipedia + GPT-4o-mini (streaming) → Browser TTS (sentence streaming) ───
+    // ─── DIRECT: Wikipedia + GPT-5-nano (streaming) → Browser TTS (sentence streaming) ───
     async function requestNarrationDirect(poi) {
       const key = STATE.config.openaiKey;
       const ttsLabel = document.getElementById('audioTTSLabel');
@@ -1598,8 +1598,8 @@
       const systemPrompt = `Du bist ein charmanter Audio-Reisefuhrer namens "SightGuide". Sprich den Zuhorer direkt an, mische Fakten mit Anekdoten, sei warmherzig. ${modeInstr[STATE.mode] || modeInstr.stand} Antworte NUR mit dem gesprochenen Text, kein Markdown. Sprache: Deutsch.`;
       const userContent = `POI: ${poi.name}\nTyp: ${poi.type}\nModus: ${STATE.mode}\n${wikiText ? 'Wikipedia:\n' + wikiText : ''}`;
 
-      // 3. Stream GPT-4o-mini → sentence-by-sentence Browser TTS
-      ttsLabel.textContent = 'GPT-4o-mini · Streaming…';
+      // 3. Stream GPT-5-nano → sentence-by-sentence Browser TTS
+      ttsLabel.textContent = 'GPT-5-nano · Streaming…';
       let sentenceBuffer = '';
       let sentenceIndex = 0;
       let totalUtterances = 0;
@@ -1647,7 +1647,7 @@
         const chatResp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({ model: 'gpt-4o-mini', stream: true, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }] }),
+          body: JSON.stringify({ model: 'gpt-5-nano', stream: true, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }] }),
           signal: AbortSignal.timeout(20000)
         });
         if (!chatResp.ok) throw new Error(`Chat API ${chatResp.status}`);
