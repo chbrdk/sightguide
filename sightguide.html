@@ -993,6 +993,10 @@
         onclick="runTestCall()">
         🧪 Test-Modus: Brandenburger Tor
       </button>
+      <button class="start-btn" style="background: #e53e3e; color: white; border: none; margin-top: 10px;"
+        onclick="testElevenLabs()">
+        🔥 TEST ELEVENLABS WS
+      </button>
     </div>
   </div>
 
@@ -2075,6 +2079,82 @@
     }
 
 
+
+    // ─── DIRECT ELEVENLABS TEST ───
+    function testElevenLabs() {
+      const elKey = STATE.config.elevenlabsKey;
+      if (!elKey) {
+        alert("Bitte zuerst ElevenLabs API Key in den Einstellungen hinterlegen!");
+        openConfig();
+        return;
+      }
+
+      console.log("TEST ELEVENLABS: Starte WebSocket...");
+      const voiceId = 'JBFqnCBsd6RMkjVDRZzb'; // George
+      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_turbo_v2_5&output_format=mp3_22050_32&xi-api-key=${elKey}`;
+      const elWs = new WebSocket(wsUrl);
+
+      document.getElementById('audioName').textContent = 'Test ElevenLabs';
+      document.getElementById('audioTTSLabel').textContent = 'ElevenLabs · Verbinde...';
+      document.getElementById('audioBar').classList.add('visible');
+
+      // Setup audio stream container
+      const audio = document.getElementById('audioEl');
+      const mediaSource = new MediaSource();
+      let sourceBuffer = null;
+      let chunkQueue = [];
+      audio.src = URL.createObjectURL(mediaSource);
+
+      mediaSource.addEventListener('sourceopen', () => {
+        sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+        sourceBuffer.addEventListener('updateend', () => {
+          if (chunkQueue.length > 0 && !sourceBuffer.updating) {
+            try { sourceBuffer.appendBuffer(chunkQueue.shift()); } catch (e) { }
+          }
+        });
+      });
+      audio.play().catch(() => { });
+
+      elWs.onopen = () => {
+        console.log("TEST ELEVENLABS: Verbundent, sende config & Text...");
+        document.getElementById('audioTTSLabel').textContent = 'ElevenLabs · Sende Text...';
+
+        elWs.send(JSON.stringify({
+          text: " ",
+          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true }
+        }));
+
+        setTimeout(() => {
+          elWs.send(JSON.stringify({ text: "Hallo! " }));
+          elWs.send(JSON.stringify({ text: "Dies ist " }));
+          elWs.send(JSON.stringify({ text: "ein direkter " }));
+          elWs.send(JSON.stringify({ text: "WebSocket Test. " }));
+          elWs.send(JSON.stringify({ text: "" }));
+        }, 100);
+      };
+
+      elWs.onmessage = (e) => {
+        const res = JSON.parse(e.data);
+        console.log("TEST ELEVENLABS Msg:", Object.keys(res), " isFinal:", res.isFinal);
+        if (res.audio) {
+          document.getElementById('audioTTSLabel').textContent = 'ElevenLabs · Audio empfangen!';
+          const binaryString = window.atob(res.audio);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+          if (sourceBuffer && !sourceBuffer.updating) {
+            try { sourceBuffer.appendBuffer(bytes.buffer); }
+            catch (err) { chunkQueue.push(bytes.buffer); }
+          } else {
+            chunkQueue.push(bytes.buffer);
+          }
+        }
+      };
+
+      elWs.onerror = (err) => console.error("TEST ELEVENLABS Error:", err);
+      elWs.onclose = (event) => console.log(`TEST ELEVENLABS Closed (Code: ${event.code}, Reason: ${event.reason})`);
+    }
 
     // ─── INIT ───
     initMap();
