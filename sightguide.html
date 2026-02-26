@@ -1793,6 +1793,11 @@
       } catch (err) {
         console.error('Chat stream failed:', err);
         streamDone = true;
+
+        if (err.message === 'Failed to fetch' || (err.message && err.message.includes('401'))) {
+          alert('OpenAI API Fehler: Der API-Key ist ungültig, abgelaufen oder hat keine Berechtigung für das Modell (401 Unauthorized). Dadurch blockiert der Browser die Anfrage (CORS). Bitte überprüfe deinen OpenAI API-Key in den Einstellungen!');
+        }
+
         if (!useElevenLabs) flushBrowser();
         if (totalUtterances === 0 && !useElevenLabs) demoNarration(poi);
         else if (useElevenLabs) demoNarration(poi);
