@@ -2056,8 +2056,8 @@
         if (!STATE.pois.find(p => p.name === 'Brandenburger Tor')) STATE.pois.unshift(testPOI);
         document.getElementById('audioName').textContent = 'Brandenburger Tor';
         document.getElementById('audioBar').classList.add('visible');
-        if (STATE.config.openaiKey) {
-          document.getElementById('audioTTSLabel').textContent = 'OpenAI · Wird generiert…';
+        if (STATE.config.elevenlabsKey || STATE.config.openaiKey) {
+          document.getElementById('audioTTSLabel').textContent = STATE.config.elevenlabsKey ? 'ElevenLabs · Wird generiert…' : 'OpenAI · Wird generiert…';
           requestNarrationDirect(testPOI);
         } else if (STATE.config.webhookUrl) {
           document.getElementById('audioTTSLabel').textContent = 'n8n · Wird generiert…';
